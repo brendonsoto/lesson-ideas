@@ -1,4 +1,12 @@
-// search for WHERE YOU LEFT OFF:
+/**
+ * Lessons:
+ * - make your types just what they need to be. you can pass entire objects w/o typing them out
+ * - making data transformation functions that rely on only a few params (and thus needed generics)
+ * - omitting function return signatures
+ * - representing valid states with unions of interfaces
+ *
+ * This file is to explore these concepts.
+ */
 
 
 /**
@@ -60,27 +68,12 @@ const serverRes: ServerResponse = {
   ]
 }
 
-// An ideal table interface. With data like this, no inline transformation
-// functions nor column objects with weird accessors/ids/rendering/etc.
-// would be necessary
-interface TableData {
-  name: string;
-  created: string;
-  status: string;
-  type: string;
-}
-
-const renderTable = (data: TableData) => {
-  // use your xXImaginationXx to pretend we're rendering react components here
-  return data;
-}
-
-
-// And now for our function for deriving 'status'
+// Let's say we need these objects to have a `status` field that's derived from
+// some other fields.
 // Let's show one way, using what seems like a simple way
 // We're using the type that we know the object is in. We know we're going to
 // pass it in anyways
-const addStatus = (obj: NdaCompliantObject) => {
+const addStatusV1 = (obj: NdaCompliantObject) => {
   let status = 'default case';
   if (obj.active) { status = 'active' }
   if (obj.archived_at) { status = 'dinosaur' }
@@ -92,102 +85,104 @@ const addStatus = (obj: NdaCompliantObject) => {
   }
 }
 
-const test1 = serverRes.data.map(addStatus)
-/**
- * WHERE YOU LEFT OFF:
- */
-
 // Think about testing this. If you use the `NdaCompliantObject` type as your
 // arg, you'll need to make multiple objects with all of the required fields.
 // Let's focus on only the required fields.
-const getStatus = ({
-  active,
-  archived_at,
-  last_active,
-}: {
-  active: NdaCompliantObject['active'],
-  archived_at?: NdaCompliantObject['archived_at'],
-  last_active?: NdaCompliantObject['last_active'],
-}) => {
-  if (active) { return 'active' }
-  if (archived_at) { return 'dinosaur' }
-  if (last_active) { return 'inactive' }
-  return 'idk how we got here'
+function testAddStatusV1() {
+  const exObj = {
+    active: true,
+    // Normally, would omit the undefined params, but they're in to be explicit
+    archived_at: undefined,
+    last_active: undefined,
+  };
+  const expected = 'active';
+  const result = addStatusV1(exObj);
+  console.log(result.status === expected)
 }
 
-// Cool, let's use a map to see what we get
-const test2 = serverRes.data.map(obj => ({ ...obj, status: getStatus(obj) }))
-
-// For gits and shiggles, let's say we're only concerned with adding the status
-// field. We're fine with keeping the other values in there too. No removals.
+// Check it out! A type error! The error is saying we're missing some fields
+// that NdaCompliantObject has but we don't need those fields in our function
 
 
+// Now let's try a different approach:
+// We'll make a type representing the function's args
 
-
-// Here's another example with pokemon and using data from another place to
-// augment data returned from a server
-// What does our data look like?
-type UnixTimestamp = number; // example: 1706763351474 -> 2024/Jan/31
-
-interface PokemonData {
-  name: string;
-  captured: UnixTimestamp;
-  generation: number;
-  type: string;
-  isShiny: boolean;
+// Our arguments type
+interface AddStatusArgs {
+  active: NdaCompliantObject['active'];
+  archived_at?: NdaCompliantObject['archived_at'];
+  last_active?: NdaCompliantObject['last_active'];
 }
 
-interface ApiResponse {
-  data: PokemonData[];
-  timestamp: UnixTimestamp;
+// Same function - the main diff is the arg type
+const addStatusV2 = (obj: AddStatusArgs) => {
+  let status = 'default case';
+  if (obj.active) { status = 'active' }
+  if (obj.archived_at) { status = 'dinosaur' }
+  if (obj.last_active) { status = 'inactive' }
+
+  return {
+    ...obj,
+    status,
+  }
 }
 
-const res: ApiResponse = {
-  data: [
-    {
-      name: 'Pikachu',
-      captured: 1706763351474,
-      generation: 1,
-      type: 'electric',
-      isShiny: false,
-    },
-    {
-      name: 'Espeon',
-      captured: 1706743271473,
-      generation: 2,
-      type: 'psychic',
-      isShiny: false,
-    },
-    {
-      name: 'BIDOOF',
-      captured: 1706733300666,
-      generation: 4,
-      type: 'normal',
-      isShiny: true,
-    },
-  ],
-  timestamp: 1706763351474,
+// Let's try our test out
+function testAddStatusV2() {
+  const exObj = {
+    active: true,
+    archived_at: undefined,
+    last_active: undefined,
+  };
+  const expected = 'active';
+  const result = addStatusV2(exObj);
+  console.log(result.status === expected)
 }
 
+// Great! The test is fine with a smaller object
+// Now let's see this function used in context
 
-// Cool, so we want to transform our data by turning the unix timestamps into
-// human readable datetime strings. (Aren't words fun?)
-// We only care about the timestamp field so let's start with that.
-const unixTimeToHumanTime = (timestamp: UnixTimestamp) => {
-  const d = new Date(timestamp)
-  return d.toLocaleString()
+const dataWithStatus = serverRes.data.map(addStatusV2)
+
+// Seems like no problem right?
+// Look at the type of `dataWithStatus` though with your editor's hover functionality
+// Only the fields within the `addStatus` function is listed in the return type!
+// We're not filtering out the other properties
+
+// Now the problem becomes: How can we craft a function with an argument type
+// that is only concerned with certain fields and not remove the other fields.
+
+// Enter _Generics!_
+// We can use generics to say "the functions' argument should be an object with
+// this set of properties _at least_"
+
+const addStatusV3 = <T extends AddStatusArgs>(obj: T) => {
+  let status = 'default case';
+  if (obj.active) { status = 'active' }
+  if (obj.archived_at) { status = 'dinosaur' }
+  if (obj.last_active) { status = 'inactive' }
+
+  return {
+    ...obj,
+    status,
+  }
 }
 
-// Now we just have to apply that to all of our data
-// The straight forward way
-const formattedData = res.data.map(p => ({
-  ...p,
-  captured: unixTimeToHumanTime(p.captured)
-}))
-
-// But what if multiple transformations are being applied?
-// What if you're in a scenario where you can't just use `map` simply and don't
-// have time to refactor?
-const formatPokemonCaptured = (p: PokemonData) => {
-  
+// No problems in our test...
+function testAddStatusV3() {
+  const data = {
+    active: true,
+    archived_at: undefined,
+    last_active: undefined,
+  }
+  const expected = 'active'
+  const result = addStatusV3(data)
+  console.log(result.status === expected)
 }
+
+// ...and no problems with the return type!
+const transformedData = serverRes.data.map(addStatusV3)
+
+// We can test the return type by using our editor's autocompletion functionality
+// Try it in this console.log statement, just after the period
+console.log(transformedData[0].)
