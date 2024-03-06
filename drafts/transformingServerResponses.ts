@@ -186,3 +186,5 @@ const transformedData = serverRes.data.map(addStatusV3)
 // We can test the return type by using our editor's autocompletion functionality
 // Try it in this console.log statement, just after the period
 console.log(transformedData[0].)
+
+const x = addStatusV3(serverRes.data[0])
